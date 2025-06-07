@@ -372,28 +372,26 @@ pub fn disassemble(buffer: Vec<u8>) -> String {
             // if it's wide
             if buffer[bp] & 1 == 1 {
                 buffer_out.push_str(&format!(
-                    "[{}]",
+                    "[{}], ax",
                     u16::from_le_bytes([buffer[bp + 1], buffer[bp + 2]])
                 ));
                 bp += 3;
             } else {
-                buffer_out.push_str(&format!("[{}]", buffer[bp + 1]));
+                buffer_out.push_str(&format!("[{}], al", buffer[bp + 1]));
                 bp += 2;
             }
-            buffer_out.push_str(", ax");
         }
         // This must go after acc to mem!
         else if &buffer[bp] & MEM_TO_ACC == MEM_TO_ACC {
-            buffer_out.push_str("mov ax, ");
             // if it's wide
             if buffer[bp] & 1 == 1 {
                 buffer_out.push_str(&format!(
-                    "[{}]",
+                    "mov ax, [{}]",
                     u16::from_le_bytes([buffer[bp + 1], buffer[bp + 2]])
                 ));
                 bp += 3;
             } else {
-                buffer_out.push_str(&format!("[{}]", buffer[bp + 1]));
+                buffer_out.push_str(&format!("mov al, [{}]", buffer[bp + 1]));
                 bp += 2;
             }
         } else {
