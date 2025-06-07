@@ -1,0 +1,407 @@
+use std::{collections::HashMap, sync::LazyLock};
+
+// OPs
+const MOV: u8 = 0b1000_1000;
+const IMMEDIATE_TO_REG_OR_MEM: u8 = 0b1100_0110;
+const IMMEDITAE_TO_REG: u8 = 0b1011_0000;
+const MEM_TO_ACC: u8 = 0b1010_0000;
+const ACC_TO_MEM: u8 = 0b1010_0010;
+
+// d
+const REG_IS_DEST: u8 = 0b0000_0010;
+
+// w
+const WIDE: u8 = 0b0000_0001;
+
+// mod
+const MEM_MODE: u8 = 0b0000_0000;
+const MEM_MODE_BYTE_DIS: u8 = 0b0100_0000;
+const MEM_MODE_WORD_DIS: u8 = 0b1000_0000;
+const REG_TO_REG: u8 = 0b1100_0000;
+
+// Registers
+const AL: u8 = 0b0000_0000;
+const CL: u8 = 0b0000_0001;
+const DL: u8 = 0b0000_0010;
+const BL: u8 = 0b0000_0011;
+const AH: u8 = 0b0000_0100;
+const CH: u8 = 0b0000_0101;
+const DH: u8 = 0b0000_0110;
+const BH: u8 = 0b0000_0111;
+
+// Wide registers
+const AX: u8 = 0b0000_0000;
+const CX: u8 = 0b0000_0001;
+const DX: u8 = 0b0000_0010;
+const BX: u8 = 0b0000_0011;
+const SP: u8 = 0b0000_0100;
+const BP: u8 = 0b0000_0101;
+const SI: u8 = 0b0000_0110;
+const DI: u8 = 0b0000_0111;
+
+static REGISTER_TABLE: LazyLock<HashMap<u8, &str>> = LazyLock::new(|| {
+    let mut register_table = HashMap::new();
+
+    register_table.insert(AL, "al");
+    register_table.insert(CL, "cl");
+    register_table.insert(DL, "dl");
+    register_table.insert(BL, "bl");
+    register_table.insert(AH, "ah");
+    register_table.insert(CH, "ch");
+    register_table.insert(DH, "dh");
+    register_table.insert(BH, "bh");
+
+    register_table
+});
+
+static WIDE_REGISTER_TABLE: LazyLock<HashMap<u8, &str>> = LazyLock::new(|| {
+    let mut wide_register_table = HashMap::new();
+
+    wide_register_table.insert(AX, "ax");
+    wide_register_table.insert(CX, "cx");
+    wide_register_table.insert(DX, "dx");
+    wide_register_table.insert(BX, "bx");
+    wide_register_table.insert(SP, "sp");
+    wide_register_table.insert(BP, "bp");
+    wide_register_table.insert(SI, "si");
+    wide_register_table.insert(DI, "di");
+
+    wide_register_table
+});
+
+fn rm_to_rg(rm: u8) -> String {
+    match rm {
+        0b0000_0000 => "[bx + si".into(),
+        0b0000_0001 => "[bx + di".into(),
+        0b0000_0010 => "[bp + si".into(),
+        0b0000_0011 => "[bp + di".into(),
+        0b0000_0100 => "[si".into(),
+        0b0000_0101 => "[di".into(),
+        // direction address, with potential offset!
+        0b0000_0110 => "[bp".into(),
+        0b0000_0111 => "[bx".into(),
+        _ => panic!("invalid rm"),
+    }
+}
+
+fn get_displacement_byte(dis: i8) -> String {
+    let mut buffer = String::new();
+    if dis.is_negative() {
+        buffer.push_str(" - ");
+    } else {
+        buffer.push_str(" + ");
+    }
+    buffer.push_str(&format!("{}", dis.abs()));
+
+    buffer
+}
+
+fn get_displacement_word(dis: [u8; 2]) -> String {
+    let mut buffer = String::new();
+    let dis = i16::from_le_bytes(dis);
+    if dis.is_negative() {
+        buffer.push_str(" - ");
+    } else {
+        buffer.push_str(" + ");
+    }
+    buffer.push_str(&format!("{}", dis.abs()));
+
+    buffer
+}
+
+pub fn disassemble(buffer: Vec<u8>) -> String {
+    let mut buffer_out = String::from("bits 16 \n\n");
+
+    // buffer pointer.
+    let mut bp = 0;
+
+    while bp < buffer.len() {
+        if &buffer[bp] & 0b1111_0000 == MOV & 0b1111_0001 {
+            buffer_out.push_str("mov ");
+
+            let reg_is_dest = buffer[bp] & REG_IS_DEST == REG_IS_DEST;
+            let is_wide = buffer[bp] & WIDE == WIDE;
+
+            let reg = (buffer[bp + 1] & 0b0011_1000) >> 3;
+            let reg_mem = buffer[bp + 1] & 0b0000_0111;
+
+            if &buffer[bp + 1] & REG_TO_REG == REG_TO_REG {
+                if is_wide {
+                    if reg_is_dest {
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg_mem).unwrap());
+                    } else {
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg_mem).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                } else {
+                    if reg_is_dest {
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg_mem).unwrap());
+                    } else {
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg_mem).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                }
+                // Advance two to account for the OP and register bytes
+                bp += 2;
+            } else if &buffer[bp + 1] & MEM_MODE_BYTE_DIS == MEM_MODE_BYTE_DIS {
+                if is_wide {
+                    if reg_is_dest {
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        if buffer[bp + 2] != 0 {
+                            buffer_out.push_str(&get_displacement_byte(buffer[bp + 2] as i8));
+                        }
+                        buffer_out.push_str("]");
+                    } else {
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        if buffer[bp + 2] != 0 {
+                            buffer_out.push_str(&get_displacement_byte(buffer[bp + 2] as i8));
+                        }
+                        buffer_out.push_str("]");
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                } else {
+                    if reg_is_dest {
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        if buffer[bp + 2] != 0 {
+                            buffer_out.push_str(&get_displacement_byte(buffer[bp + 2] as i8));
+                        }
+                        buffer_out.push_str("]");
+                    } else {
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        if buffer[bp + 2] != 0 {
+                            buffer_out.push_str(&get_displacement_byte(buffer[bp + 2] as i8));
+                        }
+                        buffer_out.push_str("]");
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                }
+                bp += 3;
+            } else if &buffer[bp + 1] & MEM_MODE_WORD_DIS == MEM_MODE_WORD_DIS {
+                if is_wide {
+                    if reg_is_dest {
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        buffer_out
+                            .push_str(&get_displacement_word([buffer[bp + 2], buffer[bp + 3]]));
+                        buffer_out.push_str("]");
+                    } else {
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        buffer_out
+                            .push_str(&get_displacement_word([buffer[bp + 2], buffer[bp + 3]]));
+                        buffer_out.push_str("]");
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                } else {
+                    if reg_is_dest {
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        buffer_out
+                            .push_str(&get_displacement_word([buffer[bp + 2], buffer[bp + 3]]));
+                        buffer_out.push_str("]");
+                    } else {
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                        buffer_out
+                            .push_str(&get_displacement_word([buffer[bp + 2], buffer[bp + 3]]));
+                        buffer_out.push_str("]");
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                }
+                bp += 4;
+            }
+            // this must be last!!
+            else if &buffer[bp + 1] & MEM_MODE == MEM_MODE {
+                if is_wide {
+                    if reg_is_dest {
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        if reg_mem == 0b0000_0110 {
+                            buffer_out.push_str(&format!(
+                                "[{}",
+                                u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]])
+                            ));
+                            bp += 4;
+                        } else {
+                            buffer_out.push_str(&rm_to_rg(reg_mem));
+                            bp += 2;
+                        }
+                        buffer_out.push_str("]");
+                    } else {
+                        // special case for direct address if reg is not the dest
+                        // 16 bit displacement follows
+                        if reg_mem == 0b0000_0110 {
+                            buffer_out.push_str(&format!(
+                                "[{}",
+                                u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]])
+                            ));
+                            bp += 4;
+                        } else {
+                            buffer_out.push_str(&rm_to_rg(reg_mem));
+                            bp += 2;
+                        }
+                        buffer_out.push_str("]");
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                } else {
+                    if reg_is_dest {
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                        buffer_out.push_str(", ");
+                        // special case for direct address
+                        if reg_mem == 0b0000_0110 {
+                            buffer_out.push_str(&format!("[{reg_mem:0}"));
+                        } else {
+                            buffer_out.push_str(&rm_to_rg(reg_mem));
+                        }
+                        buffer_out.push_str("]");
+                    } else {
+                        // special case for direct address
+                        if reg_mem == 0b0000_0110 {
+                            buffer_out.push_str(&format!("[{reg_mem:0}"));
+                        } else {
+                            buffer_out.push_str(&rm_to_rg(reg_mem));
+                        }
+                        buffer_out.push_str("]");
+                        buffer_out.push_str(", ");
+                        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                    }
+                    bp += 2;
+                }
+            }
+        } else if &buffer[bp] & IMMEDIATE_TO_REG_OR_MEM == IMMEDIATE_TO_REG_OR_MEM {
+            println!("\t{:#010b}", buffer[bp + 1]);
+            buffer_out.push_str("mov ");
+            let is_wide = buffer[bp] & 1 == 1;
+            let reg_mem = buffer[bp + 1] & 0b0000_0111;
+            if buffer[bp + 1] & MEM_MODE_BYTE_DIS == MEM_MODE_BYTE_DIS {
+                todo!()
+            } else if buffer[bp + 1] & MEM_MODE_WORD_DIS == MEM_MODE_WORD_DIS {
+                if is_wide {
+                    buffer_out.push_str(&rm_to_rg(reg_mem));
+                    buffer_out.push_str(&get_displacement_word([buffer[bp + 2], buffer[bp + 3]]));
+                    buffer_out.push_str("]");
+                    buffer_out.push_str(", word ");
+                    buffer_out.push_str(&format!(
+                        "{}",
+                        i16::from_le_bytes([buffer[bp + 4], buffer[bp + 5]])
+                    ));
+                    bp += 6;
+                } else {
+                    buffer_out.push_str(&rm_to_rg(reg_mem));
+                    buffer_out.push_str(&get_displacement_word([buffer[bp + 2], buffer[bp + 3]]));
+                    buffer_out.push_str("]");
+                    buffer_out.push_str(", byte ");
+                    buffer_out.push_str(&format!("{}", buffer[bp + 4]));
+                    bp += 5;
+                }
+            } else if buffer[bp + 1] & MEM_MODE == MEM_MODE {
+                if is_wide {
+                    // special case for direct address if reg is not the dest
+                    // 16 bit displacement follows
+                    if reg_mem == 0b0000_0110 {
+                        buffer_out.push_str(&format!(
+                            "[{}",
+                            u16::from_le_bytes([reg_mem, buffer[bp + 2]])
+                        ));
+                    } else {
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                    }
+                    buffer_out.push_str("]");
+                    buffer_out.push_str(", word ");
+                    buffer_out.push_str(&format!(
+                        "{}",
+                        i16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]])
+                    ));
+                    bp += 4;
+                } else {
+                    // special case for direct address
+                    if reg_mem == 0b0000_0110 {
+                        buffer_out.push_str(&format!(
+                            "[{}",
+                            u16::from_le_bytes([reg_mem, buffer[bp + 2]])
+                        ));
+                        bp += 4;
+                    } else {
+                        buffer_out.push_str(&rm_to_rg(reg_mem));
+                    }
+                    buffer_out.push_str("]");
+                    buffer_out.push_str(", byte ");
+                    buffer_out.push_str(&format!("{}", buffer[bp + 2]));
+                    bp += 3;
+                }
+            }
+        } else if &buffer[bp] & IMMEDITAE_TO_REG == IMMEDITAE_TO_REG {
+            buffer_out.push_str("mov ");
+
+            // wide is different in immediate to register
+            let is_wide = buffer[bp] & 0b0000_1000 == 0b0000_1000;
+
+            let reg = buffer[bp] & 0b0000_0111;
+
+            if is_wide {
+                buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+                buffer_out.push_str(", ");
+                buffer_out.push_str(&format!(
+                    "{}",
+                    i16::from_le_bytes([buffer[bp + 1], buffer[bp + 2]])
+                ));
+                bp += 3;
+            } else {
+                buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+                buffer_out.push_str(", ");
+                buffer_out.push_str(&format!("{}", buffer[bp + 1] as i8));
+                bp += 2;
+            }
+        } else if &buffer[bp] & ACC_TO_MEM == ACC_TO_MEM {
+            buffer_out.push_str("mov ");
+            // if it's wide
+            if buffer[bp] & 1 == 1 {
+                buffer_out.push_str(&format!(
+                    "[{}]",
+                    u16::from_le_bytes([buffer[bp + 1], buffer[bp + 2]])
+                ));
+                bp += 3;
+            } else {
+                buffer_out.push_str(&format!("[{}]", buffer[bp + 1]));
+                bp += 2;
+            }
+            buffer_out.push_str(", ax");
+        }
+        // This must go after acc to mem!
+        else if &buffer[bp] & MEM_TO_ACC == MEM_TO_ACC {
+            buffer_out.push_str("mov ax, ");
+            // if it's wide
+            if buffer[bp] & 1 == 1 {
+                buffer_out.push_str(&format!(
+                    "[{}]",
+                    u16::from_le_bytes([buffer[bp + 1], buffer[bp + 2]])
+                ));
+                bp += 3;
+            } else {
+                buffer_out.push_str(&format!("[{}]", buffer[bp + 1]));
+                bp += 2;
+            }
+        } else {
+            // while developing to prevent endless looping when nothing matches
+            bp += 2;
+        }
+        buffer_out.push('\n');
+    }
+
+    buffer_out
+}
