@@ -1,4 +1,5 @@
-use std::{collections::HashMap, sync::LazyLock};
+mod tables;
+use tables::{REGISTER_TABLE, WIDE_REGISTER_TABLE};
 
 // OPs
 const MOV: u8 = 0b10_0010;
@@ -20,55 +21,14 @@ const MEM_MODE_BYTE_DIS: u8 = 0b0100_0000;
 const MEM_MODE_WORD_DIS: u8 = 0b1000_0000;
 const REG_MODE: u8 = 0b1100_0000;
 
-// Registers
-const AL: u8 = 0b0000_0000;
-const CL: u8 = 0b0000_0001;
-const DL: u8 = 0b0000_0010;
-const BL: u8 = 0b0000_0011;
-const AH: u8 = 0b0000_0100;
-const CH: u8 = 0b0000_0101;
-const DH: u8 = 0b0000_0110;
-const BH: u8 = 0b0000_0111;
-
-// Wide registers
-const AX: u8 = 0b0000_0000;
-const CX: u8 = 0b0000_0001;
-const DX: u8 = 0b0000_0010;
-const BX: u8 = 0b0000_0011;
-const SP: u8 = 0b0000_0100;
-const BP: u8 = 0b0000_0101;
-const SI: u8 = 0b0000_0110;
-const DI: u8 = 0b0000_0111;
-
-static REGISTER_TABLE: LazyLock<HashMap<u8, &str>> = LazyLock::new(|| {
-    let mut register_table = HashMap::new();
-
-    register_table.insert(AL, "al");
-    register_table.insert(CL, "cl");
-    register_table.insert(DL, "dl");
-    register_table.insert(BL, "bl");
-    register_table.insert(AH, "ah");
-    register_table.insert(CH, "ch");
-    register_table.insert(DH, "dh");
-    register_table.insert(BH, "bh");
-
-    register_table
-});
-
-static WIDE_REGISTER_TABLE: LazyLock<HashMap<u8, &str>> = LazyLock::new(|| {
-    let mut wide_register_table = HashMap::new();
-
-    wide_register_table.insert(AX, "ax");
-    wide_register_table.insert(CX, "cx");
-    wide_register_table.insert(DX, "dx");
-    wide_register_table.insert(BX, "bx");
-    wide_register_table.insert(SP, "sp");
-    wide_register_table.insert(BP, "bp");
-    wide_register_table.insert(SI, "si");
-    wide_register_table.insert(DI, "di");
-
-    wide_register_table
-});
+static mut AX: u16 = 0x00;
+static mut BX: u16 = 0x00;
+static mut CX: u16 = 0x00;
+static mut DX: u16 = 0x00;
+static mut SP: u16 = 0x00;
+static mut BP: u16 = 0x00;
+static mut SI: u16 = 0x00;
+static mut DI: u16 = 0x00;
 
 fn rm_to_rg(rm: u8) -> String {
     match rm {
@@ -277,28 +237,36 @@ fn reg_mode(buffer: &[u8], bp: &mut usize, buffer_out: &mut String) {
     let reg_mem = buffer[*bp + 1] & 0b0000_0111;
     if is_wide {
         if reg_is_dest {
-            buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
-            buffer_out.push_str(", ");
-            buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg_mem).unwrap());
+            buffer_out.push_str(&format!(
+                "{}, {}",
+                WIDE_REGISTER_TABLE.get(&reg).unwrap(),
+                WIDE_REGISTER_TABLE.get(&reg_mem).unwrap(),
+            ));
         } else {
-            buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg_mem).unwrap());
-            buffer_out.push_str(", ");
-            buffer_out.push_str(WIDE_REGISTER_TABLE.get(&reg).unwrap());
+            buffer_out.push_str(&format!(
+                "{}, {}",
+                WIDE_REGISTER_TABLE.get(&reg_mem).unwrap(),
+                WIDE_REGISTER_TABLE.get(&reg).unwrap()
+            ));
         }
     } else if reg_is_dest {
-        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
-        buffer_out.push_str(", ");
-        buffer_out.push_str(REGISTER_TABLE.get(&reg_mem).unwrap());
+        buffer_out.push_str(&format!(
+            "{}, {}",
+            REGISTER_TABLE.get(&reg).unwrap(),
+            REGISTER_TABLE.get(&reg_mem).unwrap(),
+        ));
     } else {
-        buffer_out.push_str(REGISTER_TABLE.get(&reg_mem).unwrap());
-        buffer_out.push_str(", ");
-        buffer_out.push_str(REGISTER_TABLE.get(&reg).unwrap());
+        buffer_out.push_str(&format!(
+            "{}, {}",
+            REGISTER_TABLE.get(&reg_mem).unwrap(),
+            REGISTER_TABLE.get(&reg).unwrap()
+        ));
     }
     // Advance two to account for the OP and register bytes
     *bp += 2;
 }
 
-pub fn disassemble(buffer: Vec<u8>) -> String {
+pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
     let mut buffer_out = String::from("bits 16 \n\n");
 
     // buffer pointer.
@@ -702,7 +670,6 @@ pub fn disassemble(buffer: Vec<u8>) -> String {
             buffer_out.push_str(&format!("jcxz {}", buffer[bp + 1] as i8));
             bp += 2;
         } else {
-            buffer_out.push_str(&format!("here: {:08b}", buffer[bp]));
             // while developing to prevent endless looping when nothing matches
             bp += 2;
         }

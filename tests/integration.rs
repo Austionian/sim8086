@@ -14,7 +14,7 @@ fn listing_37() {
     let _bytes = file.read_to_end(&mut buffer).expect("unable to read");
 
     assert_eq!(
-        disassemble(buffer),
+        disassemble(buffer, false),
         r#"bits 16 
 
 mov cx, bx
@@ -35,7 +35,7 @@ fn listing_38() {
     let _bytes = file.read_to_end(&mut buffer).expect("unable to read");
 
     assert_eq!(
-        disassemble(buffer),
+        disassemble(buffer, false),
         r#"bits 16 
 
 mov cx, bx
@@ -66,7 +66,7 @@ fn listing_39() {
     let _bytes = file.read_to_end(&mut buffer).expect("unable to read");
 
     assert_eq!(
-        disassemble(buffer),
+        disassemble(buffer, false),
         r#"bits 16 
 
 mov si, bx
@@ -102,7 +102,7 @@ fn listing_40() {
     let _bytes = file.read_to_end(&mut buffer).expect("unable to read");
 
     assert_eq!(
-        disassemble(buffer),
+        disassemble(buffer, false),
         r#"bits 16 
 
 mov ax, [bx + di - 37]
@@ -133,7 +133,7 @@ fn listing_41() {
     let _bytes = file.read_to_end(&mut buffer).expect("unable to read");
 
     assert_eq!(
-        disassemble(buffer),
+        disassemble(buffer, false),
         r#"bits 16 
 
 add bx, [bx + si]
