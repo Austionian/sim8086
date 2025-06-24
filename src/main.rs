@@ -1,17 +1,35 @@
+use clap::Parser;
 use sim8086::disassemble;
 use std::{fs::File, io::Read};
 
-fn main() {
-    let args = std::env::args()
-        .nth(1)
-        .expect("please specify the file to read");
+#[derive(Parser)]
+#[command(version, about)]
+struct Args {
+    /// The path to the binary file to read in
+    #[arg(short, long)]
+    file: String,
+    /// Whether to execute the instructions
+    #[arg(
+        short,
+        long,
+        default_missing_value("true"),
+        default_value("false"),
+        num_args(0..=1),
+        require_equals(false)
+    )]
+    exec: bool,
+}
 
-    let mut file = File::open(format!("./{args}")).expect("file not found");
+fn main() {
+    let args = Args::parse();
+    let is_executing = args.exec;
+
+    let mut file = File::open(format!("./{}", args.file)).expect("file not found");
 
     let mut buffer = Vec::new();
 
     // read in the file
     let _bytes = file.read_to_end(&mut buffer).expect("unable to read");
 
-    println!("{}", disassemble(buffer));
+    println!("{}", disassemble(buffer, is_executing));
 }
