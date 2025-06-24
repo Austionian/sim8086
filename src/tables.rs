@@ -1,4 +1,5 @@
-use std::{cell::RefCell, collections::HashMap, sync::LazyLock};
+use once_cell::unsync::Lazy;
+use std::{cell::RefCell, collections::HashMap, fmt::Display, sync::LazyLock};
 
 // Registers
 const AL: u8 = 0b0000_0000;
@@ -50,21 +51,25 @@ pub static WIDE_REGISTER_TABLE: LazyLock<HashMap<u8, Registers>> = LazyLock::new
     wide_register_table
 });
 
-struct Register {
-    value: u16,
+#[derive(Debug)]
+pub struct Register {
+    pub value: u16,
 }
 
-// actual register values
-const _AX: RefCell<Register> = RefCell::new(Register { value: 0x00 });
-const _BX: RefCell<Register> = RefCell::new(Register { value: 0x00 });
-const _CX: RefCell<Register> = RefCell::new(Register { value: 0x00 });
-const _DX: RefCell<Register> = RefCell::new(Register { value: 0x00 });
-const _SP: RefCell<Register> = RefCell::new(Register { value: 0x00 });
-const _BP: RefCell<Register> = RefCell::new(Register { value: 0x00 });
-const _SI: RefCell<Register> = RefCell::new(Register { value: 0x00 });
-const _DI: RefCell<Register> = RefCell::new(Register { value: 0x00 });
+thread_local! {
+    // actual register values
+    static _AX: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+    static _BX: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+    static _CX: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+    static _DX: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+    static _SP: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+    static _BP: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+    static _SI: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+    static _DI: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+}
 
-enum Registers {
+#[derive(Debug)]
+pub enum Registers {
     _AX,
     _BX,
     _CX,
@@ -84,16 +89,16 @@ enum Registers {
 }
 
 impl Registers {
-    fn update_wide(&self, value: u16) {
+    pub fn update_wide(&self, value: u16) {
         match self {
-            Self::_AX => _AX.borrow_mut().value = value,
-            Self::_BX => _BX.borrow_mut().value = value,
-            Self::_CX => _CX.borrow_mut().value = value,
-            Self::_DX => _DX.borrow_mut().value = value,
-            Self::_SP => _SP.borrow_mut().value = value,
-            Self::_BP => _BP.borrow_mut().value = value,
-            Self::_SI => _SI.borrow_mut().value = value,
-            Self::_DI => _DI.borrow_mut().value = value,
+            Self::_AX => _AX.with(|register| register.borrow_mut().set(value)),
+            Self::_BX => _BX.with(|register| register.borrow_mut().set(value)),
+            Self::_CX => _CX.with(|register| register.borrow_mut().set(value)),
+            Self::_DX => _DX.with(|register| register.borrow_mut().set(value)),
+            Self::_SP => _SP.with(|register| register.borrow_mut().set(value)),
+            Self::_BP => _BP.with(|register| register.borrow_mut().set(value)),
+            Self::_SI => _SI.with(|register| register.borrow_mut().set(value)),
+            Self::_DI => _DI.with(|register| register.borrow_mut().set(value)),
             Self::_AL
             | Self::_AH
             | Self::_BL
@@ -105,16 +110,16 @@ impl Registers {
         }
     }
 
-    fn update(&self, value: u8) {
+    pub fn update(&self, value: u8) {
         match self {
-            Self::_AL => _AX.borrow_mut().set_low(value),
-            Self::_AH => _AX.borrow_mut().set_high(value),
-            Self::_BL => _BX.borrow_mut().set_low(value),
-            Self::_BH => _BX.borrow_mut().set_high(value),
-            Self::_CL => _CX.borrow_mut().set_low(value),
-            Self::_CH => _CX.borrow_mut().set_high(value),
-            Self::_DL => _DX.borrow_mut().set_low(value),
-            Self::_DH => _DX.borrow_mut().set_high(value),
+            Self::_AL => _AX.with(|register| register.borrow_mut().set_low(value)),
+            Self::_AH => _AX.with(|register| register.borrow_mut().set_high(value)),
+            Self::_BL => _BX.with(|register| register.borrow_mut().set_low(value)),
+            Self::_BH => _BX.with(|register| register.borrow_mut().set_high(value)),
+            Self::_CL => _CX.with(|register| register.borrow_mut().set_low(value)),
+            Self::_CH => _CX.with(|register| register.borrow_mut().set_high(value)),
+            Self::_DL => _DX.with(|register| register.borrow_mut().set_low(value)),
+            Self::_DH => _DX.with(|register| register.borrow_mut().set_high(value)),
             Self::_AX
             | Self::_BX
             | Self::_CX
@@ -125,11 +130,88 @@ impl Registers {
             | Self::_DI => panic!("can't set a 16 bit register with a u8"),
         }
     }
+
+    pub fn get_value(&self) -> u16 {
+        match self {
+            Self::_DI => _DI.with(|register| register.borrow().value),
+            Self::_SI => _SI.with(|register| register.borrow().value),
+            Self::_AX => _AX.with(|register| register.borrow().value),
+            Self::_BX => _BX.with(|register| register.borrow().value),
+            Self::_CX => _CX.with(|register| register.borrow().value),
+            Self::_DX => _DX.with(|register| register.borrow().value),
+            Self::_AL => _AX.with(|register| register.borrow().value),
+            Self::_AH => _AX.with(|register| register.borrow().value),
+            Self::_BL => _BX.with(|register| register.borrow().value),
+            Self::_BH => _BX.with(|register| register.borrow().value),
+            Self::_CL => _CX.with(|register| register.borrow().value),
+            Self::_CH => _CX.with(|register| register.borrow().value),
+            Self::_DL => _DX.with(|register| register.borrow().value),
+            Self::_DH => _DX.with(|register| register.borrow().value),
+            Self::_SP => _SP.with(|register| register.borrow().value),
+            Self::_BP => _BP.with(|register| register.borrow().value),
+        }
+    }
+
+    pub fn updated_value(&self) -> String {
+        match self {
+            Self::_DI => format!("di {:#x}", _DI.with(|register| register.borrow().value)),
+            Self::_SI => format!("si {:#x}", _SI.with(|register| register.borrow().value)),
+            Self::_AX => format!("ax {:#x}", _AX.with(|register| register.borrow().value)),
+            Self::_BX => format!("bx {:#x}", _BX.with(|register| register.borrow().value)),
+            Self::_CX => format!("cx {:#x}", _CX.with(|register| register.borrow().value)),
+            Self::_DX => format!("dx {:#x}", _DX.with(|register| register.borrow().value)),
+            Self::_AL => format!("al {:#x}", _AX.with(|register| register.borrow().value)),
+            Self::_AH => format!("ah {:#x}", _AX.with(|register| register.borrow().value)),
+            Self::_BL => format!("bl {:#x}", _BX.with(|register| register.borrow().value)),
+            Self::_BH => format!("bh {:#x}", _BX.with(|register| register.borrow().value)),
+            Self::_CL => format!("cl {:#x}", _CX.with(|register| register.borrow().value)),
+            Self::_CH => format!("ch {:#x}", _CX.with(|register| register.borrow().value)),
+            Self::_DL => format!("dl {:#x}", _DX.with(|register| register.borrow().value)),
+            Self::_DH => format!("dh {:#x}", _DX.with(|register| register.borrow().value)),
+            Self::_SP => format!("sp {:#x}", _SP.with(|register| register.borrow().value)),
+            Self::_BP => format!("bp {:#x}", _BP.with(|register| register.borrow().value)),
+        }
+    }
+
+    pub fn print() {
+        println!("ax: {:#04x}", _AX.with(|register| register.borrow().value));
+        println!("bx: {:#04x}", _BX.with(|register| register.borrow().value));
+        println!("cx: {:#04x}", _CX.with(|register| register.borrow().value));
+        println!("dx: {:#04x}", _DX.with(|register| register.borrow().value));
+        println!("sp: {:#04x}", _SP.with(|register| register.borrow().value));
+        println!("bp: {:#04x}", _BP.with(|register| register.borrow().value));
+        println!("si: {:#04x}", _SI.with(|register| register.borrow().value));
+        println!("di: {:#04x}", _DI.with(|register| register.borrow().value));
+        println!("\n\n");
+    }
+}
+
+impl Display for Registers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::_DI => write!(f, "di"),
+            Self::_SI => write!(f, "si"),
+            Self::_AX => write!(f, "ax"),
+            Self::_BX => write!(f, "bx"),
+            Self::_CX => write!(f, "cx"),
+            Self::_DX => write!(f, "dx"),
+            Self::_AL => write!(f, "al"),
+            Self::_AH => write!(f, "ah"),
+            Self::_BL => write!(f, "bl"),
+            Self::_BH => write!(f, "bh"),
+            Self::_CL => write!(f, "cl"),
+            Self::_CH => write!(f, "ch"),
+            Self::_DL => write!(f, "dl"),
+            Self::_DH => write!(f, "dh"),
+            Self::_SP => write!(f, "sp"),
+            Self::_BP => write!(f, "bp"),
+        }
+    }
 }
 
 impl Register {
-    fn to_string(&self) -> &'static str {
-        "test"
+    fn set(&mut self, value: u16) {
+        self.value = value;
     }
 
     // little endian
