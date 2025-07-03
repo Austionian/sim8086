@@ -66,6 +66,9 @@ thread_local! {
     static _BP: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
     static _SI: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
     static _DI: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
+
+    static ZERO_FLAG: Lazy<RefCell<bool>> = Lazy::new(|| RefCell::new(false));
+    static SIGN_FLAG: Lazy<RefCell<bool>> = Lazy::new(|| RefCell::new(false));
 }
 
 #[derive(Debug)]
@@ -131,6 +134,69 @@ impl Registers {
         }
     }
 
+    pub fn add_wide(&self, value: u16) {
+        match self {
+            Self::_AX => _AX.with(|register| register.borrow_mut().add(value)),
+            Self::_BX => _BX.with(|register| register.borrow_mut().add(value)),
+            Self::_CX => _CX.with(|register| register.borrow_mut().add(value)),
+            Self::_DX => _DX.with(|register| register.borrow_mut().add(value)),
+            Self::_SP => _SP.with(|register| register.borrow_mut().add(value)),
+            Self::_BP => _BP.with(|register| register.borrow_mut().add(value)),
+            Self::_SI => _SI.with(|register| register.borrow_mut().add(value)),
+            Self::_DI => _DI.with(|register| register.borrow_mut().add(value)),
+            Self::_AL
+            | Self::_AH
+            | Self::_BL
+            | Self::_BH
+            | Self::_CL
+            | Self::_CH
+            | Self::_DL
+            | Self::_DH => todo!(),
+        }
+    }
+
+    pub fn sub_wide(&self, value: u16) {
+        match self {
+            Self::_AX => _AX.with(|register| register.borrow_mut().sub(value)),
+            Self::_BX => _BX.with(|register| register.borrow_mut().sub(value)),
+            Self::_CX => _CX.with(|register| register.borrow_mut().sub(value)),
+            Self::_DX => _DX.with(|register| register.borrow_mut().sub(value)),
+            Self::_SP => _SP.with(|register| register.borrow_mut().sub(value)),
+            Self::_BP => _BP.with(|register| register.borrow_mut().sub(value)),
+            Self::_SI => _SI.with(|register| register.borrow_mut().sub(value)),
+            Self::_DI => _DI.with(|register| register.borrow_mut().sub(value)),
+            Self::_AL
+            | Self::_AH
+            | Self::_BL
+            | Self::_BH
+            | Self::_CL
+            | Self::_CH
+            | Self::_DL
+            | Self::_DH => todo!(),
+        }
+    }
+
+    pub fn cmp(&self, value: u16) {
+        match self {
+            Self::_AX => _AX.with(|register| register.borrow_mut().cmp(value)),
+            Self::_BX => _BX.with(|register| register.borrow_mut().cmp(value)),
+            Self::_CX => _CX.with(|register| register.borrow_mut().cmp(value)),
+            Self::_DX => _DX.with(|register| register.borrow_mut().cmp(value)),
+            Self::_SP => _SP.with(|register| register.borrow_mut().cmp(value)),
+            Self::_BP => _BP.with(|register| register.borrow_mut().cmp(value)),
+            Self::_SI => _SI.with(|register| register.borrow_mut().cmp(value)),
+            Self::_DI => _DI.with(|register| register.borrow_mut().cmp(value)),
+            Self::_AL
+            | Self::_AH
+            | Self::_BL
+            | Self::_BH
+            | Self::_CL
+            | Self::_CH
+            | Self::_DL
+            | Self::_DH => todo!(),
+        }
+    }
+
     pub fn get_value(&self) -> u16 {
         match self {
             Self::_DI => _DI.with(|register| register.borrow().value),
@@ -183,6 +249,18 @@ impl Registers {
         println!("si: {:#04x}", _SI.with(|register| register.borrow().value));
         println!("di: {:#04x}", _DI.with(|register| register.borrow().value));
         println!("\n\n");
+        print!("Flags: ");
+        ZERO_FLAG.with(|flag| {
+            if *flag.borrow() {
+                print!("Z");
+            }
+        });
+        SIGN_FLAG.with(|flag| {
+            if *flag.borrow() {
+                print!("S");
+            }
+        });
+        print!("\n");
     }
 }
 
@@ -212,6 +290,51 @@ impl Display for Registers {
 impl Register {
     fn set(&mut self, value: u16) {
         self.value = value;
+    }
+
+    fn add(&mut self, value: u16) {
+        self.value += value;
+
+        if self.value == 0 {
+            ZERO_FLAG.with(|flag| {
+                flag.replace(true);
+            })
+        }
+        if self.value & 0x8000 == 1 {
+            SIGN_FLAG.with(|flag| {
+                flag.replace(true);
+            })
+        }
+    }
+
+    fn sub(&mut self, value: u16) {
+        self.value = self.value.wrapping_sub(value);
+
+        if self.value == 0 {
+            ZERO_FLAG.with(|flag| {
+                flag.replace(true);
+            })
+        }
+        if self.value & 0x8000 == 1 {
+            SIGN_FLAG.with(|flag| {
+                flag.replace(true);
+            })
+        }
+    }
+
+    fn cmp(&mut self, value: u16) {
+        let value = self.value.wrapping_sub(value);
+
+        if value == 0 {
+            ZERO_FLAG.with(|flag| {
+                flag.replace(true);
+            })
+        }
+        if value & 0x8000 == 1 {
+            SIGN_FLAG.with(|flag| {
+                flag.replace(true);
+            })
+        }
     }
 
     // little endian

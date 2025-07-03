@@ -221,51 +221,88 @@ fn mem_mode_byte_dis(buffer: &[u8], bp: &mut usize, buffer_out: &mut String) {
     *bp += 3;
 }
 
-fn mov(destination: &Registers, origin: &Registers, buffer_out: &mut String) {
-    destination.update_wide(origin.get_value());
+fn mov(destination: &Registers, value: u16, buffer_out: &mut String) {
+    destination.update_wide(value);
 
     buffer_out.push_str(&format!(
         "{}, {} => {}",
         destination,
-        origin,
+        value,
         destination.updated_value()
     ));
 }
 
-fn reg_mode(buffer: &[u8], bp: &mut usize, buffer_out: &mut String) {
+fn add_wide(destination: &Registers, value: u16, buffer_out: &mut String) {
+    destination.add_wide(value);
+
+    buffer_out.push_str(&format!(
+        "{}, {} => {}",
+        destination,
+        value,
+        destination.updated_value()
+    ));
+}
+
+fn sub(destination: &Registers, value: u16, buffer_out: &mut String) {
+    destination.sub_wide(value);
+
+    buffer_out.push_str(&format!(
+        "{}, {} => {}",
+        destination,
+        value,
+        destination.updated_value()
+    ));
+}
+
+fn cmp(destination: &Registers, value: u16, buffer_out: &mut String) {
+    destination.cmp(value);
+
+    buffer_out.push_str(&format!(
+        "{}, {} => {}",
+        destination,
+        value,
+        destination.updated_value()
+    ));
+}
+
+fn reg_auto<F>(f: F, buffer: &[u8], bp: &mut usize, buffer_out: &mut String)
+where
+    F: Fn(&Registers, u16, &mut String),
+{
     let reg_is_dest = buffer[*bp] & REG_IS_DEST == REG_IS_DEST;
     let is_wide = buffer[*bp] & WIDE == WIDE;
     let reg = (buffer[*bp + 1] & 0b0011_1000) >> 3;
     let reg_mem = buffer[*bp + 1] & 0b0000_0111;
     if is_wide {
         if reg_is_dest {
-            mov(
+            f(
                 WIDE_REGISTER_TABLE.get(&reg).unwrap(),
-                WIDE_REGISTER_TABLE.get(&reg_mem).unwrap(),
+                WIDE_REGISTER_TABLE.get(&reg_mem).unwrap().get_value(),
                 buffer_out,
             );
         } else {
-            mov(
+            f(
                 WIDE_REGISTER_TABLE.get(&reg_mem).unwrap(),
-                WIDE_REGISTER_TABLE.get(&reg).unwrap(),
+                WIDE_REGISTER_TABLE.get(&reg).unwrap().get_value(),
                 buffer_out,
             )
         }
-    } else if reg_is_dest {
-        mov(
-            REGISTER_TABLE.get(&reg).unwrap(),
-            REGISTER_TABLE.get(&reg_mem).unwrap(),
-            buffer_out,
-        )
-    } else {
-        mov(
-            REGISTER_TABLE.get(&reg_mem).unwrap(),
-            REGISTER_TABLE.get(&reg).unwrap(),
+    }
+}
+
+fn reg_auto_immediate<F>(f: F, buffer: &[u8], bp: &mut usize, buffer_out: &mut String, value: u16)
+where
+    F: Fn(&Registers, u16, &mut String),
+{
+    let is_wide = buffer[*bp] & WIDE == WIDE;
+    let reg_mem = buffer[*bp + 1] & 0b0000_0111;
+    if is_wide {
+        f(
+            WIDE_REGISTER_TABLE.get(&reg_mem).unwrap(),
+            value,
             buffer_out,
         );
     }
-    // Advance two to account for the OP and register bytes
-    *bp += 2;
 }
 
 pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
@@ -279,7 +316,8 @@ pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
             buffer_out.push_str("mov ");
 
             if buffer[bp + 1] & REG_MODE == REG_MODE {
-                reg_mode(&buffer, &mut bp, &mut buffer_out);
+                reg_auto(mov, &buffer, &mut bp, &mut buffer_out);
+                bp += 2;
             } else if buffer[bp + 1] & MEM_MODE_BYTE_DIS == MEM_MODE_BYTE_DIS {
                 mem_mode_byte_dis(&buffer, &mut bp, &mut buffer_out);
             } else if buffer[bp + 1] & MEM_MODE_WORD_DIS == MEM_MODE_WORD_DIS {
@@ -404,40 +442,75 @@ pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
             || buffer[bp] >> 2 == 0b001010
             || buffer[bp] >> 2 == 0b001110
         {
+            let mode = Mode::from(buffer[bp + 1]);
+
             // SUB
             if buffer[bp] >> 2 == 0b001010 {
                 buffer_out.push_str("sub ");
+                match mode {
+                    Mode::Mem => {
+                        mem_mode(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::MemByteDis => {
+                        mem_mode_byte_dis(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::MemWordDis => {
+                        mem_mode_word_dis(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::Reg => {
+                        reg_auto(sub, &buffer, &mut bp, &mut buffer_out);
+                    }
+                }
             }
             // CMP
             else if buffer[bp] >> 2 == 0b001110 {
                 buffer_out.push_str("cmp ");
+                match mode {
+                    Mode::Mem => {
+                        mem_mode(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::MemByteDis => {
+                        mem_mode_byte_dis(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::MemWordDis => {
+                        mem_mode_word_dis(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::Reg => {
+                        reg_auto(cmp, &buffer, &mut bp, &mut buffer_out);
+                    }
+                }
             }
             // ADD - Must be last! Always true essentially
             else if buffer[bp] & ADD == ADD {
                 buffer_out.push_str("add ");
+                match mode {
+                    Mode::Mem => {
+                        mem_mode(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::MemByteDis => {
+                        mem_mode_byte_dis(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::MemWordDis => {
+                        mem_mode_word_dis(&buffer, &mut bp, &mut buffer_out);
+                    }
+                    Mode::Reg => {
+                        reg_auto(add_wide, &buffer, &mut bp, &mut buffer_out);
+                    }
+                }
             }
-            match Mode::from(buffer[bp + 1]) {
-                Mode::Mem => {
-                    mem_mode(&buffer, &mut bp, &mut buffer_out);
-                }
-                Mode::MemByteDis => {
-                    mem_mode_byte_dis(&buffer, &mut bp, &mut buffer_out);
-                }
-                Mode::MemWordDis => {
-                    mem_mode_word_dis(&buffer, &mut bp, &mut buffer_out);
-                }
-                Mode::Reg => {
-                    reg_mode(&buffer, &mut bp, &mut buffer_out);
-                }
-            }
+            bp += 2;
         }
         // Immediate to reg/mem
         else if buffer[bp] >> 2 == 0b0010_0000 {
             if buffer[bp + 1] >> 3 & 0b00111 == 0 {
+                let value = u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]]);
                 buffer_out.push_str("add ");
+                reg_auto_immediate(add_wide, &buffer, &mut bp, &mut buffer_out, value);
             }
             if buffer[bp + 1] >> 3 & 0b00111 == 0b00101 {
+                let value = u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]]);
                 buffer_out.push_str("sub ");
+                reg_auto_immediate(sub, &buffer, &mut bp, &mut buffer_out, value);
             }
             if buffer[bp + 1] >> 3 & 0b00111 == 0b00111 {
                 buffer_out.push_str("cmp ");
@@ -494,22 +567,22 @@ pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
                 }
                 Mode::Reg => {
                     let is_wide = buffer[bp] & WIDE == WIDE;
-                    let reg_mem = buffer[bp + 1] & 0b0000_0111;
+                    //let reg_mem = buffer[bp + 1] & 0b0000_0111;
                     if is_wide {
                         if is_signed {
-                            buffer_out
-                                .push_str(&WIDE_REGISTER_TABLE.get(&reg_mem).unwrap().to_string());
-                            buffer_out.push_str(", ");
-                            buffer_out.push_str(&format!("{}", buffer[bp + 2]));
+                            //buffer_out
+                            //    .push_str(&WIDE_REGISTER_TABLE.get(&reg_mem).unwrap().to_string());
+                            //buffer_out.push_str(", ");
+                            //buffer_out.push_str(&format!("{}", buffer[bp + 2]));
                             bp += 3;
                         } else {
-                            buffer_out
-                                .push_str(&WIDE_REGISTER_TABLE.get(&reg_mem).unwrap().to_string());
-                            buffer_out.push_str(", ");
-                            buffer_out.push_str(&format!(
-                                "{}",
-                                u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]])
-                            ));
+                            //buffer_out
+                            //    .push_str(&WIDE_REGISTER_TABLE.get(&reg_mem).unwrap().to_string());
+                            //buffer_out.push_str(", ");
+                            //buffer_out.push_str(&format!(
+                            //    "{}",
+                            //    u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]])
+                            //));
                             bp += 4;
                         }
                     } else {
