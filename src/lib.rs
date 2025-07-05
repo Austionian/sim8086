@@ -1,5 +1,5 @@
 mod tables;
-use tables::{Registers, REGISTER_TABLE, WIDE_REGISTER_TABLE};
+use tables::{Registers, REGISTER_TABLE, WIDE_REGISTER_TABLE, ZERO_FLAG};
 
 // OPs
 const MOV: u8 = 0b10_0010;
@@ -502,13 +502,17 @@ pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
         }
         // Immediate to reg/mem
         else if buffer[bp] >> 2 == 0b0010_0000 {
+            let value = if buffer[bp] & 0b0000_0011 == 0b01 {
+                u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]])
+            } else {
+                buffer[bp + 2] as u16
+            };
+
             if buffer[bp + 1] >> 3 & 0b00111 == 0 {
-                let value = u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]]);
                 buffer_out.push_str("add ");
                 reg_auto_immediate(add_wide, &buffer, &mut bp, &mut buffer_out, value);
             }
             if buffer[bp + 1] >> 3 & 0b00111 == 0b00101 {
-                let value = u16::from_le_bytes([buffer[bp + 2], buffer[bp + 3]]);
                 buffer_out.push_str("sub ");
                 reg_auto_immediate(sub, &buffer, &mut bp, &mut buffer_out, value);
             }
@@ -697,7 +701,20 @@ pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
         // JNE - jump not equal
         else if buffer[bp] == 0b0111_0101 {
             buffer_out.push_str(&format!("jne {}", buffer[bp + 1] as i8));
-            bp += 2;
+            ZERO_FLAG.with(|flag| {
+                if !*flag.borrow() {
+                    let jump_value = buffer[bp + 1] as i8;
+                    if jump_value.is_positive() {
+                        // probably not going to happen
+                        bp += jump_value as usize;
+                    } else {
+                        bp -= jump_value.abs() as usize;
+                    }
+                    bp += 2;
+                } else {
+                    bp += 2;
+                }
+            })
         }
         // JE - jump equal
         else if buffer[bp] == 0b0111_0100 {
@@ -763,6 +780,8 @@ pub fn disassemble(buffer: Vec<u8>, is_executing: bool) -> String {
         }
         buffer_out.push('\n');
     }
+
+    buffer_out.push_str(&format!("ip: {bp}"));
 
     if is_executing {
         Registers::print();

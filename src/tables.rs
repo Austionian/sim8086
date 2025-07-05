@@ -1,5 +1,6 @@
+use core::borrow;
 use once_cell::unsync::Lazy;
-use std::{cell::RefCell, collections::HashMap, fmt::Display, sync::LazyLock};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, ops::Deref, sync::LazyLock};
 
 // Registers
 const AL: u8 = 0b0000_0000;
@@ -67,7 +68,7 @@ thread_local! {
     static _SI: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
     static _DI: Lazy<RefCell<Register>> = Lazy::new(|| RefCell::new(Register { value: 0x00 }));
 
-    static ZERO_FLAG: Lazy<RefCell<bool>> = Lazy::new(|| RefCell::new(false));
+    pub static ZERO_FLAG: Lazy<RefCell<bool>> = Lazy::new(|| RefCell::new(false));
     static SIGN_FLAG: Lazy<RefCell<bool>> = Lazy::new(|| RefCell::new(false));
 }
 
