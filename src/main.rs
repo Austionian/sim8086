@@ -18,11 +18,23 @@ struct Args {
         require_equals(false)
     )]
     exec: bool,
+
+    /// Whether to dump the memory
+    #[arg(
+        short,
+        long,
+        default_missing_value("true"),
+        default_value("false"),
+        num_args(0..=1),
+        require_equals(false)
+    )]
+    dump: bool,
 }
 
 fn main() {
     let args = Args::parse();
     let is_executing = args.exec;
+    let is_dumping = args.dump;
 
     let mut file = File::open(format!("./{}", args.file)).expect("file not found");
 
@@ -31,5 +43,5 @@ fn main() {
     // read in the file
     let _bytes = file.read_to_end(&mut buffer).expect("unable to read");
 
-    println!("{}", disassemble(buffer, is_executing));
+    println!("{}", disassemble(buffer, is_executing, is_dumping));
 }

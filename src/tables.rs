@@ -1,6 +1,5 @@
-use core::borrow;
 use once_cell::unsync::Lazy;
-use std::{cell::RefCell, collections::HashMap, fmt::Display, ops::Deref, sync::LazyLock};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, sync::LazyLock};
 
 // Registers
 const AL: u8 = 0b0000_0000;
@@ -13,14 +12,14 @@ const DH: u8 = 0b0000_0110;
 const BH: u8 = 0b0000_0111;
 
 // Wide registers
-const AX: u8 = 0b0000_0000;
-const CX: u8 = 0b0000_0001;
-const DX: u8 = 0b0000_0010;
-const BX: u8 = 0b0000_0011;
-const SP: u8 = 0b0000_0100;
-const BP: u8 = 0b0000_0101;
-const SI: u8 = 0b0000_0110;
-const DI: u8 = 0b0000_0111;
+pub const AX: u8 = 0b0000_0000;
+pub const CX: u8 = 0b0000_0001;
+pub const DX: u8 = 0b0000_0010;
+pub const BX: u8 = 0b0000_0011;
+pub const SP: u8 = 0b0000_0100;
+pub const BP: u8 = 0b0000_0101;
+pub const SI: u8 = 0b0000_0110;
+pub const DI: u8 = 0b0000_0111;
 
 pub static REGISTER_TABLE: LazyLock<HashMap<u8, Registers>> = LazyLock::new(|| {
     let mut register_table = HashMap::new();
@@ -294,16 +293,25 @@ impl Register {
     }
 
     fn add(&mut self, value: u16) {
-        self.value += value;
+        self.value = self.value.wrapping_add(value);
 
         if self.value == 0 {
             ZERO_FLAG.with(|flag| {
                 flag.replace(true);
             })
+        } else {
+            ZERO_FLAG.with(|flag| {
+                flag.replace(false);
+            })
         }
+
         if self.value & 0x8000 == 1 {
             SIGN_FLAG.with(|flag| {
                 flag.replace(true);
+            })
+        } else {
+            SIGN_FLAG.with(|flag| {
+                flag.replace(false);
             })
         }
     }
@@ -315,7 +323,12 @@ impl Register {
             ZERO_FLAG.with(|flag| {
                 flag.replace(true);
             })
+        } else {
+            ZERO_FLAG.with(|flag| {
+                flag.replace(false);
+            })
         }
+
         if self.value & 0x8000 == 1 {
             SIGN_FLAG.with(|flag| {
                 flag.replace(true);
@@ -330,7 +343,13 @@ impl Register {
             ZERO_FLAG.with(|flag| {
                 flag.replace(true);
             })
+        } else {
+            ZERO_FLAG.with(|flag| {
+                flag.replace(false);
+            })
         }
+
+        // If the value is negative
         if value & 0x8000 == 1 {
             SIGN_FLAG.with(|flag| {
                 flag.replace(true);
